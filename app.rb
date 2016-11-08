@@ -101,10 +101,13 @@ module Isuconp
       def make_posts(results, all_comments: false)
         posts = []
         results.to_a.each do |post|
+#TODO: 
           post[:comment_count] = db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?').execute(
             post[:id]
           ).first[:count]
 
+
+	  
           query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC'
           unless all_comments
             query += ' LIMIT 3'
@@ -248,6 +251,7 @@ module Isuconp
         user[:id]
       ).first[:count]
 
+#TODO: post count
       post_ids = db.prepare('SELECT `id` FROM `posts` WHERE `user_id` = ?').execute(
         user[:id]
       ).map{|post| post[:id]}
@@ -328,11 +332,17 @@ module Isuconp
 
         params['file'][:tempfile].rewind
         query = 'INSERT INTO `posts` (`user_id`, `mime`, `body`) VALUES (?,?,?)'
+	increment_query = 'UPDATE `users` SET post_count = post_count + 1 WHERE id = ?;'
         db.prepare(query).execute(
           me[:id],
           mime,
           params["body"],
         )
+
+        #db.prepare(increment_query).execute(
+        #  me[:id]
+        #)
+
         pid = db.last_id
         file_name = "#{pid}.#{ext}"
         file = File.basename(file_name)
@@ -390,11 +400,16 @@ module Isuconp
       post_id = params['post_id']
 
       query = 'INSERT INTO `comments` (`post_id`, `user_id`, `comment`) VALUES (?,?,?)'
+      increment_query = 'UPDATE `posts` SET comment_count = comment_count + 1 WHERE id = ?;'
       db.prepare(query).execute(
         post_id,
         me[:id],
         params['comment']
       )
+
+     # db.prepare(increment_query).execute(
+     # 	post_id 
+     # )
 
       redirect "/posts/#{post_id}", 302
     end
