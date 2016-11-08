@@ -3,7 +3,7 @@ require 'sinatra/base'
 require 'mysql2'
 require 'rack-flash'
 require 'shellwords'
-require 'pry'
+#require 'pry'
 
 module Isuconp
   class App < Sinatra::Base
@@ -22,7 +22,7 @@ module Isuconp
             host: ENV['ISUCONP_DB_HOST'] || 'localhost',
             port: ENV['ISUCONP_DB_PORT'] && ENV['ISUCONP_DB_PORT'].to_i,
             username: ENV['ISUCONP_DB_USER'] || 'root',
-            password: ENV['ISUCONP_DB_PASSWORD'] || 'root',
+            password: ENV['ISUCONP_DB_PASSWORD'] || '',
             database: ENV['ISUCONP_DB_NAME'] || 'isuconp',
           },
         }
@@ -51,46 +51,48 @@ module Isuconp
         sql << 'DELETE FROM comments WHERE id > 100000'
         sql << 'UPDATE users SET del_flg = 0'
         sql << 'UPDATE users SET del_flg = 1 WHERE id % 50 = 0'
+        sql << post_count()
+        sql << comment_count()
         sql.each do |s|
           db.prepare(s).execute
         end
 
-        post_count()
-        comment_count()
       end
 
       def post_count
+	sqls = []
         user_post_count = Hash.new(0)
 #        posts = Post.all
         posts = db.prepare('SELECT * FROM `posts` ;').execute()
+
+#	test = 'UPDAET TABLE_NAME1 AS T1 SET(HOGE, FUGA) = (SELECT VALUE1, VALUE2 FROM TABLE_NAME2 AS T2WHERE T1.COL1=T2.COL2)'
         posts.to_a.each do |post|
           user_post_count[post[:user_id]] += 1 
         end
 
         user_post_count.each do |key,val|
          # user = User.find_by(key)
-         sql = "UPDATE `users` SET `post_count` = #{val} WHERE `id` = #{key}; "
-         db.prepare(sql).execute()
+         sqls << "UPDATE `users` SET `post_count` = #{val} WHERE `id` = #{key}; "
          # user.update_attribute(:post_count, val ) 
-         
         end
+	sqls
       end
 
       def comment_count
+	sqls = []
         post_comment_count = Hash.new(0)
         #comments = Comment.all
         comments = db.prepare('SELECT * FROM `comments` ;').execute()
         comments.to_a.each do |comment|
           post_comment_count[comment[:post_id]] += 1
         end
-        p post_comment_count
 
         post_comment_count.each do |key, val|
 #          post = Post.find_by(key)
 #           post.update_attribute(:comment_count, val )
-         sql = "UPDATE `posts` SET `comment_count` = #{val} WHERE `id` = #{key}; "
-         db.prepare(sql).execute()
+         sqls << "UPDATE `posts` SET `comment_count` = #{val} WHERE `id` = #{key}; "
         end
+	sqls
       end
 
       def try_login(account_name, password)
