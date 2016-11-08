@@ -3,6 +3,7 @@ require 'sinatra/base'
 require 'mysql2'
 require 'rack-flash'
 require 'shellwords'
+require 'pry'
 
 module Isuconp
   class App < Sinatra::Base
@@ -21,7 +22,7 @@ module Isuconp
             host: ENV['ISUCONP_DB_HOST'] || 'localhost',
             port: ENV['ISUCONP_DB_PORT'] && ENV['ISUCONP_DB_PORT'].to_i,
             username: ENV['ISUCONP_DB_USER'] || 'root',
-            password: ENV['ISUCONP_DB_PASSWORD'],
+            password: ENV['ISUCONP_DB_PASSWORD'] || 'root',
             database: ENV['ISUCONP_DB_NAME'] || 'isuconp',
           },
         }
@@ -52,6 +53,43 @@ module Isuconp
         sql << 'UPDATE users SET del_flg = 1 WHERE id % 50 = 0'
         sql.each do |s|
           db.prepare(s).execute
+        end
+
+        post_count()
+        comment_count()
+      end
+
+      def post_count
+        user_post_count = Hash.new(0)
+#        posts = Post.all
+        posts = db.prepare('SELECT * FROM `posts` ;').execute()
+        posts.to_a.each do |post|
+          user_post_count[post[:user_id]] += 1 
+        end
+
+        user_post_count.each do |key,val|
+         # user = User.find_by(key)
+         sql = "UPDATE `users` SET `post_count` = #{val} WHERE `id` = #{key}; "
+         db.prepare(sql).execute()
+         # user.update_attribute(:post_count, val ) 
+         
+        end
+      end
+
+      def comment_count
+        post_comment_count = Hash.new(0)
+        #comments = Comment.all
+        comments = db.prepare('SELECT * FROM `comments` ;').execute()
+        comments.to_a.each do |comment|
+          post_comment_count[comment[:post_id]] += 1
+        end
+        p post_comment_count
+
+        post_comment_count.each do |key, val|
+#          post = Post.find_by(key)
+#           post.update_attribute(:comment_count, val )
+         sql = "UPDATE `posts` SET `comment_count` = #{val} WHERE `id` = #{key}; "
+         db.prepare(sql).execute()
         end
       end
 
@@ -102,11 +140,17 @@ module Isuconp
         posts = []
         results.to_a.each do |post|
 #TODO: 
-          post[:comment_count] = db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?').execute(
-            post[:id]
-          ).first[:count]
+          #post[:comment_count] = db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?').execute(
+          #  post[:id]
+          #).first[:count]
 
+          #res = db.prepare('SELECT comment_count from `posts` where `id` = ? ;').execute(
+          #  post[:id]
+          #)
 
+          res = db.prepare("SELECT comment_count from `posts` where `id` = #{post[:id]} ;").execute().to_a.first
+          #TODO: 書き換える
+          post[:comment_count] = res[:comment_count].to_s
 	  
           query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC'
           unless all_comments
@@ -247,10 +291,11 @@ module Isuconp
       )
       posts = make_posts(results)
 
-      comment_count = db.prepare('SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?').execute(
-        user[:id]
-      ).first[:count]
+      #comment_count = db.prepare('SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?').execute(
+      #  user[:id]
+      #).first[:count]
 
+      comment_count = db.prepare("SELECT comment_count from `posts` where `id` = #{user[:id]} ;").execute().to_a.first[:comment_count].to_i
 #TODO: post count
       post_ids = db.prepare('SELECT `id` FROM `posts` WHERE `user_id` = ?').execute(
         user[:id]
@@ -261,6 +306,7 @@ module Isuconp
       if post_count > 0
         placeholder = (['?'] * post_ids.length).join(",")
         commented_count = db.prepare("SELECT COUNT(*) AS count FROM `comments` WHERE `post_id` IN (#{placeholder})").execute(
+#        commented_count = db.prepare("SELECT comment_count from `comments` where `post_id` IN  (#{placeholder} )").execute(
           *post_ids
         ).first[:count]
       end
@@ -332,16 +378,14 @@ module Isuconp
 
         params['file'][:tempfile].rewind
         query = 'INSERT INTO `posts` (`user_id`, `mime`, `body`) VALUES (?,?,?)'
-	increment_query = 'UPDATE `users` SET post_count = post_count + 1 WHERE id = ?;'
+        increment_query = "UPDATE isuconp.users SET `post_count` = `post_count` + 1 WHERE `id` = #{me[:id]} ;"
+#        increment_query = 'UPDATE `users` SET `post_count` = `post_count` + 1 WHERE `id` = ?;'
         db.prepare(query).execute(
           me[:id],
           mime,
           params["body"],
         )
-
-        #db.prepare(increment_query).execute(
-        #  me[:id]
-        #)
+        db.prepare(increment_query)
 
         pid = db.last_id
         file_name = "#{pid}.#{ext}"
@@ -400,16 +444,14 @@ module Isuconp
       post_id = params['post_id']
 
       query = 'INSERT INTO `comments` (`post_id`, `user_id`, `comment`) VALUES (?,?,?)'
-      increment_query = 'UPDATE `posts` SET comment_count = comment_count + 1 WHERE id = ?;'
+      increment_query = "UPDATE `posts` SET comment_count = comment_count + 1 WHERE id = #{post_id};"
       db.prepare(query).execute(
         post_id,
         me[:id],
         params['comment']
       )
 
-     # db.prepare(increment_query).execute(
-     # 	post_id 
-     # )
+      db.prepare(increment_query)
 
       redirect "/posts/#{post_id}", 302
     end
